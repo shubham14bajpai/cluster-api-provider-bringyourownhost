@@ -18,7 +18,16 @@ spec:
     singular: byomachine
   scope: Namespaced
   versions:
-  - name: v1beta1
+  - additionalPrinterColumns:
+    - description: Namespace of ByoMachine
+      jsonPath: .metadata.namespace
+      name: Namespace
+      type: string
+    - description: Age of ByoMachine
+      jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
+    name: v1beta1
     schema:
       openAPIV3Schema:
         description: ByoMachine is the Schema for the byomachines API

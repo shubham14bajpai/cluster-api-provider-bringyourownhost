@@ -55,6 +55,8 @@ type APIEndpoint struct {
 //+kubebuilder:object:root=true
 //+kubebuilder:resource:path=byoclusters,scope=Namespaced,shortName=byoc
 //+kubebuilder:subresource:status
+//+kubebuilder:printcolumn:name="Namespace",type=string,JSONPath=`.metadata.namespace`,description="Namespace of ByoCluster"
+//+kubebuilder:printcolumn:name="Age",type=date,JSONPath=`.metadata.creationTimestamp`,description="Age of ByoCluster"
 
 // ByoCluster is the Schema for the byoclusters API
 type ByoCluster struct {

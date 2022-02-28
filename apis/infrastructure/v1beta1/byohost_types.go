@@ -46,6 +46,8 @@ type ByoHostStatus struct {
 //+kubebuilder:object:root=true
 //+kubebuilder:resource:path=byohosts,scope=Namespaced,shortName=byoh
 //+kubebuilder:subresource:status
+//+kubebuilder:printcolumn:name="Namespace",type=string,JSONPath=`.metadata.namespace`,description="Namespace of ByoHost"
+//+kubebuilder:printcolumn:name="Age",type=date,JSONPath=`.metadata.creationTimestamp`,description="Age of ByoHost"
 
 // ByoHost is the Schema for the byohosts API
 type ByoHost struct {

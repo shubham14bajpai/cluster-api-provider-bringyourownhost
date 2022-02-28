@@ -61,6 +61,8 @@ type ByoMachineStatus struct {
 //+kubebuilder:object:root=true
 //+kubebuilder:resource:path=byomachines,scope=Namespaced,shortName=byom
 //+kubebuilder:subresource:status
+//+kubebuilder:printcolumn:name="Namespace",type=string,JSONPath=`.metadata.namespace`,description="Namespace of ByoMachine"
+//+kubebuilder:printcolumn:name="Age",type=date,JSONPath=`.metadata.creationTimestamp`,description="Age of ByoMachine"
 
 // ByoMachine is the Schema for the byomachines API
 type ByoMachine struct {

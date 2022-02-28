@@ -18,7 +18,16 @@ spec:
     singular: byocluster
   scope: Namespaced
   versions:
-  - name: v1beta1
+  - additionalPrinterColumns:
+    - description: Namespace of ByoCluster
+      jsonPath: .metadata.namespace
+      name: Namespace
+      type: string
+    - description: Age of ByoCluster
+      jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
+    name: v1beta1
     schema:
       openAPIV3Schema:
         description: ByoCluster is the Schema for the byoclusters API
