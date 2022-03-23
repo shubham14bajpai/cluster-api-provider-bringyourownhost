@@ -87,3 +87,8 @@ type ByoClusterList struct {
 func init() {
 	SchemeBuilder.Register(&ByoCluster{}, &ByoClusterList{})
 }
+
+// IsZero returns true if either the host or the port are zero values.
+func (v APIEndpoint) IsZero() bool {
+	return v.Host == "" || v.Port == 0
+}
