@@ -94,6 +94,25 @@ var _ = Describe("Byohost Agent Tests", func() {
 			}))
 		})
 
+		It("should set the host platform info to HostDetails", func() {
+			result, reconcilerErr := hostReconciler.Reconcile(ctx, controllerruntime.Request{
+				NamespacedName: byoHostLookupKey,
+			})
+
+			Expect(result).To(Equal(controllerruntime.Result{}))
+			Expect(reconcilerErr).ToNot(HaveOccurred())
+
+			updatedByoHost := &infrastructurev1beta1.ByoHost{}
+			err := k8sClient.Get(ctx, byoHostLookupKey, updatedByoHost)
+			Expect(err).ToNot(HaveOccurred())
+			hostDetails := updatedByoHost.Status.HostDetails
+			Expect(hostDetails).To(Equal(infrastructurev1beta1.HostInfo{
+				OSName:       "linux",
+				OSImage:      "Ubuntu 20.04.4 LTS",
+				Architecture: "amd64",
+			}))
+		})
+
 		Context("When MachineRef is set", func() {
 			BeforeEach(func() {
 				byoMachine = builder.ByoMachine(ns, "test-byomachine").Build()

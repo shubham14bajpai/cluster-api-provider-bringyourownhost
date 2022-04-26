@@ -6,7 +6,11 @@ package reconciler
 import (
 	"context"
 	"fmt"
+	"io/ioutil"
 	"os"
+	"regexp"
+	"runtime"
+	"strings"
 
 	"github.com/pkg/errors"
 	"github.com/vmware-tanzu/cluster-api-provider-bringyourownhost/agent/cloudinit"
@@ -91,7 +95,14 @@ func (r *HostReconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctr
 }
 
 func (r *HostReconciler) reconcileNormal(ctx context.Context, byoHost *infrastructurev1beta1.ByoHost) (ctrl.Result, error) {
+	var err error
 	logger := ctrl.LoggerFrom(ctx)
+	if byoHost.Status.HostDetails, err = r.getHostInfo(); err != nil {
+		logger.Error(err, "error getting host platform details")
+		r.Recorder.Eventf(byoHost, corev1.EventTypeWarning, "GetHostInfoFailed", err.Error())
+		return ctrl.Result{}, err
+	}
+
 	if byoHost.Status.MachineRef == nil {
 		logger.Info("Machine ref not yet set")
 		conditions.MarkFalse(byoHost, infrastructurev1beta1.K8sNodeBootstrapSucceeded, infrastructurev1beta1.WaitingForMachineRefReason, clusterv1.ConditionSeverityInfo, "")
@@ -309,6 +320,40 @@ func (r *HostReconciler) deleteEndpointIP(ctx context.Context, byoHost *infrastr
 		}
 	}
 	return nil
+}
+
+// getHostInfo gets the host platform details.
+func (r *HostReconciler) getHostInfo() (infrastructurev1beta1.HostInfo, error) {
+	hostInfo := infrastructurev1beta1.HostInfo{}
+
+	hostInfo.Architecture = runtime.GOARCH
+	hostInfo.OSName = runtime.GOOS
+
+	if distribution, err := getOperatingSystem(); err != nil {
+		return hostInfo, errors.Wrap(err, "failed to get host operating system image")
+	} else {
+		hostInfo.OSImage = distribution
+	}
+	return hostInfo, nil
+}
+
+// getOperatingSystem gets the name of the current operating system image.
+func getOperatingSystem() (string, error) {
+	rex := regexp.MustCompile("(PRETTY_NAME)=(.*)")
+
+	bytes, err := ioutil.ReadFile("/etc/os-release")
+	if err != nil && os.IsNotExist(err) {
+		// /usr/lib/os-release in stateless systems like Clear Linux
+		bytes, err = ioutil.ReadFile("/usr/lib/os-release")
+	}
+	if err != nil {
+		return "", fmt.Errorf("error opening file : %v", err)
+	}
+	line := rex.FindAllStringSubmatch(string(bytes), -1)
+	if len(line) > 0 {
+		return strings.Trim(line[0][2], "\""), nil
+	}
+	return "Linux", nil
 }
 
 func (r *HostReconciler) removeAnnotations(ctx context.Context, byoHost *infrastructurev1beta1.ByoHost) {
