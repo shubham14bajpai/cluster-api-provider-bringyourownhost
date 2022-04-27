@@ -15,44 +15,69 @@ const (
 	osNotDetected = "could not detect OS correctly"
 )
 
-// oSDetector contains all the logic for detecting the OS version.
-type osDetector struct {
-	cachedNormalizedOS string
+// OSDetector contains all the logic for detecting the OS version.
+type OSDetector struct {
+	os   string
+	ver  string
+	arch string
 }
 
 // Detect returns the os info in normalized format.
 // The format is as follows: <os>_<ver>_<arch>
 // Example with Ubuntu 21.04.3 64bit: Ubuntu_20.04.3_x64
-func (osd *osDetector) Detect() (string, error) {
-	return osd.DetectByHostnamectl(func() (string, error) { return osd.getHostnamectl() })
+func (osd *OSDetector) Detect() (string, error) {
+	return osd.GetNormalizedOS(func() (string, error) { return osd.getHostnamectl() })
+}
+
+// GetOS returns the os name along with the version
+// Example: Ubuntu 21.04.3
+func (osd *OSDetector) GetOS() (string, error) {
+	return osd.GetOSNameWithVersion(func() (string, error) { return osd.getHostnamectl() })
+}
+
+// GetNormalizedOS detects and converts the detected os into format <os>_<ver>_<arch>
+func (osd *OSDetector) GetNormalizedOS(f func() (string, error)) (string, error) {
+	if osd.os != "" && osd.ver != "" && osd.arch != "" {
+		return osd.normalizeOSName(), nil
+	}
+
+	if err := osd.DetectByHostnamectl(f); err != nil {
+		return "", err
+	}
+
+	return osd.normalizeOSName(), nil
+}
+
+// GetOSNameWithVersion detects and converts the detected os into format <os> <ver>
+func (osd *OSDetector) GetOSNameWithVersion(f func() (string, error)) (string, error) {
+	if osd.os != "" && osd.ver != "" {
+		return osd.os + " " + osd.ver, nil
+	}
+
+	if err := osd.DetectByHostnamectl(f); err != nil {
+		return "", err
+	}
+	return osd.os + " " + osd.ver, nil
 }
 
 // DetectByHostnamectl is a helper method to enable testing of detect with mock methods.
-func (osd *osDetector) DetectByHostnamectl(f func() (string, error)) (string, error) {
-	if osd.cachedNormalizedOS != "" {
-		return osd.cachedNormalizedOS, nil
-	}
-
+func (osd *OSDetector) DetectByHostnamectl(f func() (string, error)) error {
 	systemInfo, err := f()
 	if err != nil {
-		return "", err
+		return err
 	}
-	osDetails := parseHostnamectl(systemInfo)
-	os := osDetails[0]
-	ver := osDetails[1]
-	arch := osDetails[2]
-	if os == "" || ver == "" || arch == "" {
-		return "", errors.New(osNotDetected)
+	osd.parseHostnamectl(systemInfo)
+	if osd.os == "" || osd.ver == "" || osd.arch == "" {
+		return errors.New(osNotDetected)
 	}
 
-	osd.cachedNormalizedOS = normalizeOSName(os, ver, arch)
-	return osd.cachedNormalizedOS, nil
+	return nil
 }
 
 // normalizeOsName normalizes given os, arch and k8s version to the correct format.
 // Takes as arguments os, ver and arch then returns string in the format <os>_<ver>_<arch>
-func normalizeOSName(os, ver, arch string) string {
-	osName := fmt.Sprintf("%s_%s_%s", os, ver, arch)
+func (osd *OSDetector) normalizeOSName() string {
+	osName := fmt.Sprintf("%s_%s_%s", osd.os, osd.ver, osd.arch)
 	osName = strings.ReplaceAll(osName, " ", "_")
 
 	return osName
@@ -77,7 +102,7 @@ func normalizeOSName(os, ver, arch string) string {
 // Operating System: Ubuntu 20.04.3 LTS
 //           Kernel: Linux 5.11.0-27-generic
 //     Architecture: x86-64
-func (osd *osDetector) getHostnamectl() (string, error) {
+func (osd *OSDetector) getHostnamectl() (string, error) {
 	out, err := exec.Command("hostnamectl").Output()
 
 	if err != nil {
@@ -88,29 +113,25 @@ func (osd *osDetector) getHostnamectl() (string, error) {
 }
 
 // Method that extracts the important information from getHostSystemInfo.
-func parseHostnamectl(systemInfo string) [3]string {
+func (osd *OSDetector) parseHostnamectl(systemInfo string) {
 	const strIndicatingOSline string = "Operating System: "
 	const strIndicatingArchline string = "Architecture: "
-
-	var os, ver, arch string
 
 	osRegex := regexp.MustCompile(strIndicatingOSline + `[a-zA-Z]+[ a-zA-Z]*[a-zA-Z]+`)
 	locOS := osRegex.FindIndex([]byte(systemInfo))
 	if locOS != nil {
-		os = systemInfo[locOS[0]+len(strIndicatingOSline) : locOS[1]]
+		osd.os = systemInfo[locOS[0]+len(strIndicatingOSline) : locOS[1]]
 	}
 
 	verRegex := regexp.MustCompile(strIndicatingOSline + `[a-zA-Z]+[ a-zA-Z]* (\d+(\.\d+)*)`)
 	locVer := verRegex.FindIndex([]byte(systemInfo))
 	if locVer != nil {
-		ver = systemInfo[locOS[1]+1 : locVer[1]]
+		osd.ver = systemInfo[locOS[1]+1 : locVer[1]]
 	}
 
 	archRegex := regexp.MustCompile(strIndicatingArchline + `[a-zA-Z]+[ a-zA-Z0-9-]*`)
 	locArch := archRegex.FindIndex([]byte(systemInfo))
 	if locArch != nil {
-		arch = systemInfo[locArch[0]+len(strIndicatingArchline) : locArch[1]]
+		osd.arch = systemInfo[locArch[0]+len(strIndicatingArchline) : locArch[1]]
 	}
-
-	return [3]string{os, ver, arch}
 }

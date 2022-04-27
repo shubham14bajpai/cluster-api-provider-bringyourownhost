@@ -121,7 +121,7 @@ func listSupported() {
 }
 
 func detectOS() {
-	osd := osDetector{}
+	osd := OSDetector{}
 	detectedOs, err := osd.Detect()
 	if err != nil {
 		klogger.Error(err, "Error detecting OS")

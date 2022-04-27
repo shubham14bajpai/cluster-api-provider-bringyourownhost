@@ -108,7 +108,7 @@ var _ = Describe("Byohost Agent Tests", func() {
 			hostDetails := updatedByoHost.Status.HostDetails
 			Expect(hostDetails).To(Equal(infrastructurev1beta1.HostInfo{
 				OSName:       "linux",
-				OSImage:      "Ubuntu 20.04.4 LTS",
+				OSImage:      "Ubuntu 20.04.4",
 				Architecture: "amd64",
 			}))
 		})

@@ -121,7 +121,7 @@ func New(downloadPath string, bundleType bundleType, logger logr.Logger) (*insta
 		return nil, fmt.Errorf("empty download path")
 	}
 
-	osd := osDetector{}
+	osd := OSDetector{}
 	os, err := osd.Detect()
 	if err != nil {
 		return nil, ErrDetectOs
