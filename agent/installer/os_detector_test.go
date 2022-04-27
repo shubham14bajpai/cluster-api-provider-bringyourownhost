@@ -81,17 +81,32 @@ var _ = Describe("Byohost Installer Tests", func() {
 			Expect(err).ShouldNot(HaveOccurred())
 			Expect(detectedOS).To(Equal("Ubuntu 20.04.3"))
 		})
+
+		It("Should cache OS and not execute again getHostnamectl for GetOS", func() {
+			_, err = d.GetOSNameWithVersion(func() (string, error) { return mh.Get(os, ver, arch) })
+			Expect(err).ShouldNot(HaveOccurred())
+			Expect(mh.callCount).To(Equal(1))
+			_, err = d.GetOSNameWithVersion(func() (string, error) { return mh.Get(os, ver, arch) })
+			Expect(err).ShouldNot(HaveOccurred())
+			Expect(mh.callCount).To(Equal(1))
+		})
 	})
 	Context("When the OS is not detected", func() {
 		It("Should return error if OS distribution is missing", func() {
 			os = ""
 			_, err = d.GetNormalizedOS(func() (string, error) { return mh.Get(os, ver, arch) })
 			Expect(err).Should(HaveOccurred())
+
+			_, err = d.GetOSNameWithVersion(func() (string, error) { return mh.Get(os, ver, arch) })
+			Expect(err).Should(HaveOccurred())
 		})
 
 		It("Should return error if OS version is missing", func() {
 			ver = ""
 			_, err = d.GetNormalizedOS(func() (string, error) { return mh.Get(os, ver, arch) })
+			Expect(err).Should(HaveOccurred())
+
+			_, err = d.GetOSNameWithVersion(func() (string, error) { return mh.Get(os, ver, arch) })
 			Expect(err).Should(HaveOccurred())
 		})
 
@@ -106,11 +121,22 @@ var _ = Describe("Byohost Installer Tests", func() {
 				return "", nil
 			})
 			Expect(err).Should(HaveOccurred())
+
+			_, err = d.GetOSNameWithVersion(func() (string, error) {
+				return "", nil
+			})
+			Expect(err).Should(HaveOccurred())
 		})
 
 		It("Should return error if output is random string", func() {
+			randomString := "wef9sdf092g\nd2g39\n\n\nd92faad"
 			_, err = d.GetNormalizedOS(func() (string, error) {
-				return "wef9sdf092g\nd2g39\n\n\nd92faad", nil
+				return randomString, nil
+			})
+			Expect(err).Should(HaveOccurred())
+
+			_, err = d.GetOSNameWithVersion(func() (string, error) {
+				return randomString, nil
 			})
 			Expect(err).Should(HaveOccurred())
 		})
