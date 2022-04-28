@@ -79,7 +79,7 @@ var _ = Describe("Byohost Installer Tests", func() {
 		It("Should return os name on GetOS", func() {
 			detectedOS, err = d.GetOSNameWithVersion(func() (string, error) { return mh.Get(os, ver, arch) })
 			Expect(err).ShouldNot(HaveOccurred())
-			Expect(detectedOS).To(Equal("Ubuntu 20.04.3"))
+			Expect(detectedOS).To(Equal(os + " " + ver))
 		})
 
 		It("Should cache OS and not execute again getHostnamectl for GetOS", func() {

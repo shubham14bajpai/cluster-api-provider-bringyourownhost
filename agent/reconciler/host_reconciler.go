@@ -9,12 +9,15 @@ import (
 	"os"
 	"runtime"
 
+	cadvisorapi "github.com/google/cadvisor/info/v1"
+	cadvisormanager "github.com/google/cadvisor/manager"
 	"github.com/pkg/errors"
 	"github.com/vmware-tanzu/cluster-api-provider-bringyourownhost/agent/cloudinit"
 	"github.com/vmware-tanzu/cluster-api-provider-bringyourownhost/agent/installer"
 	"github.com/vmware-tanzu/cluster-api-provider-bringyourownhost/agent/registration"
 	"github.com/vmware-tanzu/cluster-api-provider-bringyourownhost/common"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/tools/record"
 	clusterv1 "sigs.k8s.io/cluster-api/api/v1beta1"
@@ -45,6 +48,7 @@ type HostReconciler struct {
 	TemplateParser cloudinit.ITemplateParser
 	Recorder       record.EventRecorder
 	K8sInstaller   IK8sInstaller
+	cadvisormanager.Manager
 }
 
 const (
@@ -97,6 +101,12 @@ func (r *HostReconciler) reconcileNormal(ctx context.Context, byoHost *infrastru
 	if err := r.populateHostDetails(ctx, byoHost); err != nil {
 		logger.Error(err, "error getting host platform details")
 		r.Recorder.Eventf(byoHost, corev1.EventTypeWarning, "GetHostInfoFailed", err.Error())
+		return ctrl.Result{}, err
+	}
+
+	if err := r.populateMachineInfo(ctx, byoHost); err != nil {
+		logger.Error(err, "error getting host capacity")
+		r.Recorder.Eventf(byoHost, corev1.EventTypeWarning, "GetHostCapacityFailed", err.Error())
 		return ctrl.Result{}, err
 	}
 
@@ -319,7 +329,7 @@ func (r *HostReconciler) deleteEndpointIP(ctx context.Context, byoHost *infrastr
 	return nil
 }
 
-// getHostInfo gets the host platform details.
+// populateHostDetails gets the host platform details.
 // TODO: handle os upgrade info on reconcile
 func (r *HostReconciler) populateHostDetails(ctx context.Context, byoHost *infrastructurev1beta1.ByoHost) error {
 	logger := ctrl.LoggerFrom(ctx)
@@ -333,6 +343,22 @@ func (r *HostReconciler) populateHostDetails(ctx context.Context, byoHost *infra
 		}
 		byoHost.Status.HostDetails.Architecture = runtime.GOARCH
 		byoHost.Status.HostDetails.OSName = runtime.GOOS
+	}
+	return nil
+}
+
+// getMachineInfo gets the host platform details.
+// TODO: handle os upgrade info on reconcile
+func (r *HostReconciler) populateMachineInfo(ctx context.Context, byoHost *infrastructurev1beta1.ByoHost) error {
+	logger := ctrl.LoggerFrom(ctx)
+	if byoHost.Status.Capacity == nil {
+		logger.Info("Add node capacity")
+		machineInfo, err := r.GetMachineInfo()
+		if err != nil {
+			return errors.Wrap(err, "failed to get host machine info")
+		}
+
+		byoHost.Status.Capacity = capacityFromMachineInfo(machineInfo)
 	}
 	return nil
 }
@@ -366,4 +392,18 @@ func (r *HostReconciler) removeAnnotations(ctx context.Context, byoHost *infrast
 
 	// Remove the bundle tag annotation
 	delete(byoHost.Annotations, infrastructurev1beta1.BundleLookupTagAnnotation)
+}
+
+// CapacityFromMachineInfo returns the capacity of the resources from the machine info.
+func capacityFromMachineInfo(info *cadvisorapi.MachineInfo) corev1.ResourceList {
+	c := corev1.ResourceList{
+		corev1.ResourceCPU: *resource.NewMilliQuantity(
+			int64(info.NumCores*1000),
+			resource.DecimalSI),
+		corev1.ResourceMemory: *resource.NewQuantity(
+			int64(info.MemoryCapacity),
+			resource.BinarySI),
+	}
+
+	return c
 }

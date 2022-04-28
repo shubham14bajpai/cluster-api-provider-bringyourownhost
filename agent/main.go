@@ -7,10 +7,16 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"net/http"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/go-logr/logr"
+	"github.com/google/cadvisor/cache/memory"
+	cadvisormetrics "github.com/google/cadvisor/container"
+	"github.com/google/cadvisor/manager"
+	"github.com/google/cadvisor/utils/sysfs"
 	pflag "github.com/spf13/pflag"
 	"github.com/vmware-tanzu/cluster-api-provider-bringyourownhost/agent/cloudinit"
 	"github.com/vmware-tanzu/cluster-api-provider-bringyourownhost/agent/installer"
@@ -24,6 +30,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	klog "k8s.io/klog/v2"
 	"k8s.io/klog/v2/klogr"
+	"k8s.io/utils/pointer"
 	clusterv1 "sigs.k8s.io/cluster-api/api/v1beta1"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/cache"
@@ -35,6 +42,13 @@ import (
 // The following example sets labelFlags with two items:
 //     -label "key1=value1" -label "key2=value2"
 type labelFlags map[string]string
+
+// TODO(vmarmol): Make configurable.
+// The amount of time for which to keep stats in memory.
+const statsCacheDuration = 2 * time.Minute
+const maxHousekeepingInterval = 15 * time.Second
+const defaultHousekeepingInterval = 10 * time.Second
+const allowDynamicHousekeeping = true
 
 // String implements flag.Value interface
 func (l *labelFlags) String() string {
@@ -207,6 +221,32 @@ func main() {
 		}
 	}
 
+	sysFs := sysfs.NewRealSysFs()
+
+	includedMetrics := cadvisormetrics.MetricSet{
+		cadvisormetrics.CpuUsageMetrics:     struct{}{},
+		cadvisormetrics.MemoryUsageMetrics:  struct{}{},
+		cadvisormetrics.CpuLoadMetrics:      struct{}{},
+		cadvisormetrics.DiskIOMetrics:       struct{}{},
+		cadvisormetrics.NetworkUsageMetrics: struct{}{},
+		cadvisormetrics.AppMetrics:          struct{}{},
+		cadvisormetrics.ProcessMetrics:      struct{}{},
+		cadvisormetrics.OOMMetrics:          struct{}{},
+	}
+
+	duration := maxHousekeepingInterval
+	housekeepingConfig := manager.HouskeepingConfig{
+		Interval:     &duration,
+		AllowDynamic: pointer.BoolPtr(allowDynamicHousekeeping),
+	}
+
+	// Create the cAdvisor container manager.
+	m, err := manager.New(memory.New(statsCacheDuration, nil), sysFs, housekeepingConfig, includedMetrics, http.DefaultClient, []string{}, nil /* containerEnvMetadataWhiteList */, "" /* perfEventsFile */, time.Duration(0) /*resctrlInterval*/)
+	if err != nil {
+		logger.Error(err, "failed to instantiate aAdvisor manager")
+		return
+	}
+
 	hostReconciler := &reconciler.HostReconciler{
 		Client:         k8sClient,
 		CmdRunner:      cloudinit.CmdRunner{},
@@ -214,6 +254,7 @@ func main() {
 		TemplateParser: setupTemplateParser(),
 		Recorder:       mgr.GetEventRecorderFor("hostagent-controller"),
 		K8sInstaller:   k8sInstaller,
+		Manager:        m,
 	}
 
 	if err = hostReconciler.SetupWithManager(context.TODO(), mgr); err != nil {
