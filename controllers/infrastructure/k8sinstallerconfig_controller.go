@@ -16,7 +16,6 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
-	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/utils/pointer"
 	clusterv1 "sigs.k8s.io/cluster-api/api/v1beta1"
 	"sigs.k8s.io/cluster-api/util"
@@ -71,6 +70,23 @@ func (r *K8sInstallerConfigReconciler) Reconcile(ctx context.Context, req ctrl.R
 		return ctrl.Result{}, err
 	}
 
+	helper, err := patch.NewHelper(config, r.Client)
+	if err != nil {
+		logger.Error(err, "unable to create helper")
+		return ctrl.Result{}, err
+	}
+	defer func() {
+		if err = helper.Patch(ctx, config); err != nil && reterr == nil {
+			logger.Error(err, "failed to patch K8sInstallerConfig")
+			reterr = err
+		}
+	}()
+
+	// Handle deleted K8sInstallerConfig
+	if !config.ObjectMeta.DeletionTimestamp.IsZero() {
+		return r.reconcileDelete(ctx, config)
+	}
+
 	// Fetch the ByoMachine
 	byoMachine, err := GetOwnerByoMachine(ctx, r.Client, &config.ObjectMeta)
 	if err != nil {
@@ -107,26 +123,9 @@ func (r *K8sInstallerConfigReconciler) Reconcile(ctx context.Context, req ctrl.R
 		Config:     config,
 	}
 
-	helper, err := patch.NewHelper(config, r.Client)
-	if err != nil {
-		logger.Error(err, "unable to create helper")
-		return ctrl.Result{}, err
-	}
-	defer func() {
-		if err = helper.Patch(ctx, config); err != nil && reterr == nil {
-			logger.Error(err, "failed to patch K8sInstallerConfig")
-			reterr = err
-		}
-	}()
-
 	// Add finalizer first if not exist
 	if !controllerutil.ContainsFinalizer(scope.Config, infrav1.K8sInstallerConfigFinalizer) {
 		controllerutil.AddFinalizer(scope.Config, infrav1.K8sInstallerConfigFinalizer)
-	}
-
-	// Handle deleted K8sInstallerConfig
-	if !config.ObjectMeta.DeletionTimestamp.IsZero() {
-		return r.reconcileDelete(ctx, scope)
 	}
 
 	switch {
@@ -255,33 +254,18 @@ func (r *K8sInstallerConfigReconciler) ByoMachineToK8sInstallerConfigMapFunc(o c
 	return result
 }
 
-func (r *K8sInstallerConfigReconciler) reconcileDelete(ctx context.Context, scope *k8sInstallerConfigScope) (reconcile.Result, error) {
-	logger := scope.Logger
+func (r *K8sInstallerConfigReconciler) reconcileDelete(ctx context.Context, config *infrav1.K8sInstallerConfig) (reconcile.Result, error) {
+	logger := log.FromContext(ctx)
 	logger.Info("Deleting K8sInstallerConfig")
-
-	secretRef := scope.Config.Status.InstallationSecret
-	if secretRef != nil {
-		// fetching the secret from reference
-		obj := &corev1.Secret{}
-		err := r.Client.Get(ctx, types.NamespacedName{Name: secretRef.Name, Namespace: secretRef.Namespace}, obj)
-		if err != nil && !apierrors.IsNotFound(err) {
-			return reconcile.Result{}, errors.Wrapf(err, "failed to get %s %q for K8sInstallerConfig %q in namespace %q",
-				secretRef.GroupVersionKind(), secretRef.Name, scope.Config.Name, scope.Config.Namespace)
-		}
-
-		if obj != nil && obj.Name != "" {
-			// deleting the referred secret
-			logger.Info("Deleting secret", "secret", secretRef.Name)
-			if err := r.Client.Delete(ctx, obj); err != nil && !apierrors.IsNotFound(err) {
-				return ctrl.Result{}, errors.Wrapf(err,
-					"failed to delete %s %q for K8sInstallerConfig %q in namespace %q",
-					obj.GroupVersionKind(), obj.GetName(), scope.Config.Name, scope.Config.Namespace)
-			}
-		}
+	// Check if the ByoMachine exists
+	_, err := GetOwnerByoMachine(ctx, r.Client, &config.ObjectMeta)
+	if err != nil && apierrors.IsNotFound(err) {
+		controllerutil.RemoveFinalizer(config, infrav1.K8sInstallerConfigFinalizer)
+		return reconcile.Result{}, nil
 	}
 
-	controllerutil.RemoveFinalizer(scope.Config, infrav1.K8sInstallerConfigFinalizer)
-	return reconcile.Result{}, nil
+	logger.Error(err, "failed to get Owner ByoMachine")
+	return ctrl.Result{}, err
 }
 
 // GetOwnerByoMachine returns the ByoMachine object owning the current resource.
