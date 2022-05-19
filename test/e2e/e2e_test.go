@@ -133,6 +133,87 @@ var _ = Describe("When BYOH joins existing cluster [PR-Blocking]", func() {
 
 	})
 
+	Context("When K8sInstallerConfigTemplate exist and agent has the use installer flag", func() {
+		FIt("Should create a workload cluster with single BYOH host using installerConfig", func() {
+			clusterName = fmt.Sprintf("%s-%s", specName, util.RandomString(6))
+			byoHostName1 := "byohost1"
+			byoHostName2 := "byohost2"
+
+			dockerClient, err = client.NewClientWithOpts(client.FromEnv)
+			Expect(err).NotTo(HaveOccurred())
+
+			runner := ByoHostRunner{
+				Context:               ctx,
+				clusterConName:        clusterConName,
+				Namespace:             namespace.Name,
+				PathToHostAgentBinary: pathToHostAgentBinary,
+				DockerClient:          dockerClient,
+				NetworkInterface:      "kind",
+				bootstrapClusterProxy: bootstrapClusterProxy,
+				CommandArgs: map[string]string{
+					"--kubeconfig":               "/mgmt.conf",
+					"--namespace":                namespace.Name,
+					"--v":                        "1",
+					"--use-installer-controller": "true",
+				},
+			}
+
+			var output types.HijackedResponse
+			runner.ByoHostName = byoHostName1
+			byohost, err := runner.SetupByoDockerHost()
+			Expect(err).NotTo(HaveOccurred())
+			output, byohostContainerID, err := runner.ExecByoDockerHost(byohost)
+			Expect(err).NotTo(HaveOccurred())
+			defer output.Close()
+			byohostContainerIDs = append(byohostContainerIDs, byohostContainerID)
+			f := WriteDockerLog(output, agentLogFile1)
+			defer func() {
+				deferredErr := f.Close()
+				if deferredErr != nil {
+					Showf("error closing file %s: %v", agentLogFile1, deferredErr)
+				}
+			}()
+
+			runner.ByoHostName = byoHostName2
+			byohost, err = runner.SetupByoDockerHost()
+			Expect(err).NotTo(HaveOccurred())
+			output, byohostContainerID, err = runner.ExecByoDockerHost(byohost)
+			Expect(err).NotTo(HaveOccurred())
+			defer output.Close()
+			byohostContainerIDs = append(byohostContainerIDs, byohostContainerID)
+
+			// read the log of host agent container in backend, and write it
+			f = WriteDockerLog(output, agentLogFile2)
+			defer func() {
+				deferredErr := f.Close()
+				if deferredErr != nil {
+					Showf("error closing file %s: %v", agentLogFile2, deferredErr)
+				}
+			}()
+
+			setControlPlaneIP(context.Background(), dockerClient)
+			clusterctl.ApplyClusterTemplateAndWait(ctx, clusterctl.ApplyClusterTemplateAndWaitInput{
+				ClusterProxy: bootstrapClusterProxy,
+				ConfigCluster: clusterctl.ConfigClusterInput{
+					LogFolder:                filepath.Join(artifactFolder, "clusters", bootstrapClusterProxy.GetName()),
+					ClusterctlConfigPath:     clusterctlConfigPath,
+					KubeconfigPath:           bootstrapClusterProxy.GetKubeconfigPath(),
+					InfrastructureProvider:   clusterctl.DefaultInfrastructureProvider,
+					Flavor:                   clusterctl.DefaultFlavor,
+					Namespace:                namespace.Name,
+					ClusterName:              clusterName,
+					KubernetesVersion:        e2eConfig.GetVariable(KubernetesVersion),
+					ControlPlaneMachineCount: pointer.Int64Ptr(1),
+					WorkerMachineCount:       pointer.Int64Ptr(1),
+				},
+				WaitForClusterIntervals:      e2eConfig.GetIntervals(specName, "wait-cluster"),
+				WaitForControlPlaneIntervals: e2eConfig.GetIntervals(specName, "wait-control-plane"),
+				WaitForMachineDeployments:    e2eConfig.GetIntervals(specName, "wait-worker-nodes"),
+			}, clusterResources)
+
+		})
+	})
+
 	JustAfterEach(func() {
 		if CurrentGinkgoTestDescription().Failed {
 			ShowInfo([]string{agentLogFile1, agentLogFile2})
