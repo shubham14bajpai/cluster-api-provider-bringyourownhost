@@ -98,7 +98,7 @@ func (r *HostReconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctr
 
 func (r *HostReconciler) reconcileNormal(ctx context.Context, byoHost *infrastructurev1beta1.ByoHost) (ctrl.Result, error) {
 	logger := ctrl.LoggerFrom(ctx)
-        logger = logger.WithValues("ByoHost", byoHost.Name)
+	logger = logger.WithValues("ByoHost", byoHost.Name)
 	logger.Info("reconcile normal")
 	if byoHost.Status.MachineRef == nil {
 		logger.Info("Machine ref not yet set")
@@ -179,7 +179,7 @@ func (r *HostReconciler) installerController(ctx context.Context, byoHost *infra
 		return ctrl.Result{}, err
 	}
 	byoHost.Spec.UninstallationScript = &uninstallScript
-	installScript, err = r.parseInstallationScript(ctx, installScript)
+	installScript, err = r.parseScript(ctx, installScript)
 	if err != nil {
 		return ctrl.Result{}, err
 	}
@@ -292,7 +292,7 @@ func (r *HostReconciler) hostCleanUp(ctx context.Context, byoHost *infrastructur
 			}
 			logger.Info("Executing Uninstall script")
 			uninstallScript := *byoHost.Spec.UninstallationScript
-			uninstallScript, err = r.parseInstallationScript(ctx, uninstallScript)
+			uninstallScript, err = r.parseScript(ctx, uninstallScript)
 			if err != nil {
 				logger.Error(err, "error parsing Uninstallation script")
 				return err
